@@ -8660,6 +8660,13 @@ GF_Err sbgp_Read(GF_Box *s, GF_BitStream *bs)
 #ifndef GPAC_DISABLE_ISOM_WRITE
 GF_Err sbgp_Write(GF_Box *s, GF_BitStream *bs)
 {
+	/* KKBOX: Drop sbgp box. 
+	 *
+	 * sbgp box would be added while using MP4Box with encryption. Unfortunately,
+	 * Chrome cannot handle this box well. The current suggested work-around is
+	 * to drop sbgp box.
+	 * */
+#if 0
 	u32 i;
 	GF_Err e;
 	GF_SampleGroupBox *p = (GF_SampleGroupBox*)s;
@@ -8675,11 +8682,19 @@ GF_Err sbgp_Write(GF_Box *s, GF_BitStream *bs)
 		gf_bs_write_u32(bs, p->sample_entries[i].sample_count);
 		gf_bs_write_u32(bs, p->sample_entries[i].group_description_index);
 	}
+#endif
 	return GF_OK;
 }
 
 GF_Err sbgp_Size(GF_Box *s)
 {
+	/* KKBOX: Drop sbgp box. 
+	 *
+	 * sbgp box would be added while using MP4Box with encryption. Unfortunately,
+	 * Chrome cannot handle this box well. The current suggested work-around is
+	 * to drop sbgp box.
+	 * */
+#if 0
 	GF_Err e;
 	GF_SampleGroupBox *p = (GF_SampleGroupBox*)s;
 	e = gf_isom_full_box_get_size(s);
@@ -8687,6 +8702,10 @@ GF_Err sbgp_Size(GF_Box *s)
 	p->size += 8;
 	if (p->version==1) p->size += 4;
 	p->size += 8*p->entry_count;
+#else
+	GF_SampleGroupBox *p = (GF_SampleGroupBox*)s;
+	p->size = 0;
+#endif
 	return GF_OK;
 }
 
@@ -8866,6 +8885,13 @@ GF_Err sgpd_Read(GF_Box *s, GF_BitStream *bs)
 #ifndef GPAC_DISABLE_ISOM_WRITE
 GF_Err sgpd_Write(GF_Box *s, GF_BitStream *bs)
 {
+	/* KKBOX: Drop sgpd box. 
+	 *
+	 * sgpd box would be added while using MP4Box with encryption. Unfortunately,
+	 * Chrome cannot handle this box well. The current suggested work-around is
+	 * to drop sgpd box.
+	 * */
+#if 0
 	u32 i;
 	GF_SampleGroupDescriptionBox *p = (GF_SampleGroupDescriptionBox *)s;
 	GF_Err e;
@@ -8885,11 +8911,19 @@ GF_Err sgpd_Write(GF_Box *s, GF_BitStream *bs)
 		}
 		sgpd_write_entry(p->grouping_type, ptr, bs);
 	}
+#endif
 	return GF_OK;
 }
 
 GF_Err sgpd_Size(GF_Box *s)
 {
+	/* KKBOX: Drop sgpd box. 
+	 *
+	 * sgpd box would be added while using MP4Box with encryption. Unfortunately,
+	 * Chrome cannot handle this box well. The current suggested work-around is
+	 * to drop sgpd box.
+	 * */
+#if 0
 	u32 i;
 	GF_SampleGroupDescriptionBox *p = (GF_SampleGroupDescriptionBox *)s;
 	GF_Err e;
@@ -8913,6 +8947,10 @@ GF_Err sgpd_Size(GF_Box *s)
 	if (p->version==1) {
 		if (!p->default_length) p->size += gf_list_count(p->group_descriptions)*4;
 	}
+#else
+	GF_SampleGroupDescriptionBox *p = (GF_SampleGroupDescriptionBox *)s;
+	p->size = 0;
+#endif
 	return GF_OK;
 }
 #endif /*GPAC_DISABLE_ISOM_WRITE*/
