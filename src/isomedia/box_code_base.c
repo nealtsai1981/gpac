@@ -3787,11 +3787,6 @@ GF_Err mp4v_Write(GF_Box *s, GF_BitStream *bs)
 	if (e) return e;
 	gf_isom_video_sample_entry_write((GF_VisualSampleEntryBox *)s, bs);
 
-	if (ptr->pasp) {
-		e = gf_isom_box_write((GF_Box *)ptr->pasp, bs);
-		if (e) return e;
-	}
-
 	/*mp4v*/
 	if (ptr->esd) {
 		e = gf_isom_box_write((GF_Box *)ptr->esd, bs);
@@ -3824,6 +3819,17 @@ GF_Err mp4v_Write(GF_Box *s, GF_BitStream *bs)
 			if (e) return e;
 		}
 	}
+
+	/* KKBOX: Make pasp box behind trun box. 
+	 *
+	 * Silverlight with PlayReady insists that pasp box should be behind 
+	 * avcC box.
+	 * */
+	if (ptr->pasp) {
+		e = gf_isom_box_write((GF_Box *)ptr->pasp, bs);
+		if (e) return e;
+	}
+
 	if (ptr->rvcc) {
 		e = gf_isom_box_write((GF_Box *)ptr->rvcc, bs);
 		if (e) return e;
