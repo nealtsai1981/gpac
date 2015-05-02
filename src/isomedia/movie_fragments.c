@@ -480,7 +480,12 @@ u32 UpdateRuns(GF_ISOFile *movie, GF_TrackFragmentBox *traf)
 			if (!j) {
 				first_ent = ent;
 				RunSize = ent->size;
-				RunDur = ent->Duration;
+				/* KKBOX: Force 0 to mean each sample has different sample duration.
+				 *
+				 * Force trun box to have 0 duration, which means each sample has
+				 * its own sample duration.
+				 */
+				RunDur = 0; // ent->Duration;
 			}
 			//we may have one entry only ...
 			if (j || (count==1)) {
