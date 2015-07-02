@@ -50,12 +50,12 @@
 
 u32 temi_url_insertion_delay = 1000;
 u32 temi_offset = 0;
-Bool temi_disable_loop = 0;
+Bool temi_disable_loop = GF_FALSE;
 FILE *logfile = NULL;
 
 static void on_gpac_log(void *cbk, u32 ll, u32 lm, const char *fmt, va_list list)
 {
-	FILE *logs = cbk;
+	FILE *logs = (FILE*)cbk;
 	vfprintf(logs, fmt, list);
 	fflush(logs);
 }
@@ -66,7 +66,7 @@ static GFINLINE void usage()
 	        "GPAC Copyright (c) Telecom ParisTech 2000-2014\n"
 	        "GPAC Configuration: " GPAC_CONFIGURATION "\n"
 	        "Features: %s\n\n", gpac_features());
-	fprintf(stderr, "mp2ts <inputs> <destinations> [options]\n"
+	fprintf(stderr, "mp42ts <inputs> <destinations> [options]\n"
 	        "\n"
 	        "Inputs:\n"
 	        "-src filename[:OPTS]   specifies an input file used for a TS service\n"
@@ -115,7 +115,7 @@ static GFINLINE void usage()
 	        "-ifce IPIFCE           specifies default IP interface to use. Default is IF_ANY.\n"
 	        "-temi [URL]            Inserts TEMI time codes in adaptation field. URL is optionnal\n"
 	        "-temi-delay DelayMS    Specifies delay between two TEMI url descriptors (default is 1000)\n"
-			"-temi-offset OffsetMS  Specifies an offset in ms to add to TEMI (by default TEMI starts at 0)\n"
+	        "-temi-offset OffsetMS  Specifies an offset in ms to add to TEMI (by default TEMI starts at 0)\n"
 	        "-temi-noloop           Do not restart the TEMI timeline at the end of the source\n"
 	        "-sdt-rate MS           Gives the SDT carrousel rate in milliseconds. If 0 (default), SDT is not sent\n"
 	        "\n"
@@ -196,6 +196,7 @@ typedef struct
 	const char *temi_url;
 	u32 last_temi_url;
 	Bool insert_temi;
+	Bool insert_ntp;
 
 } GF_ESIMP4;
 #endif
@@ -284,7 +285,7 @@ static u32 format_af_descriptor(char *af_data, u64 timecode, u32 timescale, u64 
 	}
 
 	if (timescale || ntp) {
-		Bool use64 = (timecode > 0xFFFFFFFFUL) ? 1 : 0;
+		Bool use64 = (timecode > 0xFFFFFFFFUL) ? GF_TRUE : GF_FALSE;
 		len = 3; //3 bytes flags
 
 		if (timescale) len += 4 + (use64 ? 8 : 4);
@@ -349,6 +350,7 @@ static GF_Err mp4_input_ctrl(GF_ESInterface *ifce, u32 act_type, void *param)
 		if (priv->is_repeat) pck.flags |= GF_ESI_DATA_REPEAT;
 
 		if (priv->insert_temi) {
+			u64 ntp=0;
 			u64 tc = priv->sample->DTS + priv->sample->CTS_Offset;
 			if (temi_disable_loop) {
 				tc += priv->ts_offset;
@@ -358,7 +360,14 @@ static GF_Err mp4_input_ctrl(GF_ESInterface *ifce, u32 act_type, void *param)
 				tc += ((u64) temi_offset) * ifce->timescale / 1000;
 			}
 
-			pck.mpeg2_af_descriptors_size = format_af_descriptor(af_data, tc, ifce->timescale, 0, priv->temi_url, &priv->last_temi_url);
+			if (priv->insert_ntp) {
+				u32 sec, frac;
+				gf_net_get_ntp(&sec, &frac);
+				ntp = sec;
+				ntp <<= 32;
+				ntp |= frac;
+			}
+			pck.mpeg2_af_descriptors_size = format_af_descriptor(af_data, tc, ifce->timescale, ntp, priv->temi_url, &priv->last_temi_url);
 			pck.mpeg2_af_descriptors = af_data;
 		}
 
@@ -373,7 +382,7 @@ static GF_Err mp4_input_ctrl(GF_ESInterface *ifce, u32 act_type, void *param)
 		}
 
 		if (priv->sample->IsRAP && priv->dsi && priv->dsi_size) {
-			pck.data = priv->dsi;
+			pck.data = (char*)priv->dsi;
 			pck.data_len = priv->dsi_size;
 			ifce->output_ctrl(ifce, GF_ESI_OUTPUT_DATA_DISPATCH, &pck);
 			pck.flags &= ~GF_ESI_DATA_AU_START;
@@ -435,12 +444,12 @@ static GF_Err mp4_input_ctrl(GF_ESInterface *ifce, u32 act_type, void *param)
 				duration = (u64) (gf_isom_get_duration(priv->mp4) * scale);
 				priv->ts_offset += duration;
 				priv->sample_number = 0;
-				priv->is_repeat = (priv->sample_count==1) ? 1 : 0;
+				priv->is_repeat = (priv->sample_count==1) ? GF_TRUE : GF_FALSE;
 			}
 			else if (priv->image_repeat_ms && priv->source->nb_real_streams) {
 				priv->nb_repeat_last++;
 				priv->sample_number--;
-				priv->is_repeat = 1;
+				priv->is_repeat = GF_TRUE;
 			} else {
 				if (!(ifce->caps & GF_ESI_STREAM_IS_OVER)) {
 					ifce->caps |= GF_ESI_STREAM_IS_OVER;
@@ -483,7 +492,7 @@ static void fill_isom_es_ifce(M2TSSource *source, GF_ESInterface *ifce, GF_ISOFi
 	priv->track = track_num;
 	priv->mtype = gf_isom_get_media_type(priv->mp4, priv->track);
 	priv->mstype = gf_isom_get_media_subtype(priv->mp4, priv->track, 1);
-	priv->loop = source->real_time ? 1 : 0;
+	priv->loop = source->real_time ? GF_TRUE : GF_FALSE;
 	priv->sample_count = gf_isom_get_sample_count(mp4, track_num);
 	source->samples_count += priv->sample_count;
 	if (priv->sample_count>1)
@@ -661,7 +670,7 @@ static GF_Err rtp_input_ctrl(GF_ESInterface *ifce, u32 act_type, void *param)
 	case GF_ESI_INPUT_DATA_FLUSH:
 		/*flush rtcp channel*/
 		while (1) {
-			Bool has_sr=0;
+			Bool has_sr = GF_FALSE;
 			size = gf_rtp_read_rtcp(rtp->rtp_ch, buffer, 8000);
 			if (!size) break;
 			e = gf_rtp_decode_rtcp(rtp->rtp_ch, buffer, size, &has_sr);
@@ -681,7 +690,7 @@ static GF_Err rtp_input_ctrl(GF_ESInterface *ifce, u32 act_type, void *param)
 				}
 				rtp->ts_offset = rtp->rtp_ch->last_SR_rtp_time;
 				rtp->ts_offset -= (s64) (time * rtp->rtp_ch->TimeScale);
-				rtp->rtcp_init = 1;
+				rtp->rtcp_init = GF_TRUE;
 			}
 		}
 		/*flush rtp channel*/
@@ -772,7 +781,7 @@ static void rtp_sl_packet_cbk(void *udta, char *payload, u32 size, GF_SLHeader *
 
 			/*since we don't inspect the RTP content, we can only concatenate SPS and PPS indicated in SDP*/
 			if (hdr->randomAccessPointFlag && rtp->dsi_and_rap) {
-				rtp->pck.data = rtp->dsi_and_rap;
+				rtp->pck.data = (char*)rtp->dsi_and_rap;
 				rtp->pck.data_len = rtp->avc_dsi_size;
 
 				rtp->ifce->output_ctrl(rtp->ifce, GF_ESI_OUTPUT_DATA_DISPATCH, &rtp->pck);
@@ -790,7 +799,7 @@ static void rtp_sl_packet_cbk(void *udta, char *payload, u32 size, GF_SLHeader *
 			rtp->dsi_and_rap = gf_malloc(sizeof(char)*(rtp->pck.data_len));
 			memcpy(rtp->dsi_and_rap, rtp->depacketizer->sl_map.config, rtp->depacketizer->sl_map.configSize);
 			memcpy((char *) rtp->dsi_and_rap + rtp->depacketizer->sl_map.configSize, payload, size);
-			rtp->pck.data = rtp->dsi_and_rap;
+			rtp->pck.data = (char*)rtp->dsi_and_rap;
 		}
 		rtp->ifce->output_ctrl(rtp->ifce, GF_ESI_OUTPUT_DATA_DISPATCH, &rtp->pck);
 	}
@@ -824,7 +833,7 @@ static void fill_rtp_es_ifce(GF_ESInterface *ifce, GF_SDPMedia *media, GF_SDPInf
 	memset(&trans, 0, sizeof(GF_RTSPTransport));
 	trans.Profile = media->Profile;
 	trans.source = conn ? conn->host : sdp->o_address;
-	trans.IsUnicast = gf_sk_is_multicast_address(trans.source) ? 0 : 1;
+	trans.IsUnicast = gf_sk_is_multicast_address(trans.source) ? GF_FALSE : GF_TRUE;
 	if (!trans.IsUnicast) {
 		trans.port_first = media->PortNumber;
 		trans.port_last = media->PortNumber + 1;
@@ -859,11 +868,11 @@ static void fill_rtp_es_ifce(GF_ESInterface *ifce, GF_SDPMedia *media, GF_SDPInf
 	if (rtp->depacketizer->sl_map.config) {
 		switch (ifce->object_type_indication) {
 		case GPAC_OTI_VIDEO_MPEG4_PART2:
-			rtp->cat_dsi = 1;
+			rtp->cat_dsi = GF_TRUE;
 			break;
 		case GPAC_OTI_VIDEO_AVC:
 		case GPAC_OTI_VIDEO_SVC:
-			rtp->is_264 = 1;
+			rtp->is_264 = GF_TRUE;
 			rtp->depacketizer->flags |= GF_RTP_AVC_USE_ANNEX_B;
 			{
 #ifndef GPAC_DISABLE_AV_PARSERS
@@ -875,12 +884,12 @@ static void fill_rtp_es_ifce(GF_ESInterface *ifce, GF_SDPMedia *media, GF_SDPInf
 
 					bs = gf_bs_new(NULL, 0, GF_BITSTREAM_WRITE);
 					for (i=0; i<gf_list_count(avccfg->sequenceParameterSets); i++) {
-						slc = gf_list_get(avccfg->sequenceParameterSets, i);
+						slc = (GF_AVCConfigSlot*)gf_list_get(avccfg->sequenceParameterSets, i);
 						gf_bs_write_u32(bs, 1);
 						gf_bs_write_data(bs, slc->data, slc->size);
 					}
 					for (i=0; i<gf_list_count(avccfg->pictureParameterSets); i++) {
-						slc = gf_list_get(avccfg->pictureParameterSets, i);
+						slc = (GF_AVCConfigSlot*)gf_list_get(avccfg->pictureParameterSets, i);
 						gf_bs_write_u32(bs, 1);
 						gf_bs_write_data(bs, slc->data, slc->size);
 					}
@@ -892,22 +901,22 @@ static void fill_rtp_es_ifce(GF_ESInterface *ifce, GF_SDPMedia *media, GF_SDPInf
 			}
 			break;
 		case GPAC_OTI_AUDIO_AAC_MPEG4:
-			ifce->decoder_config = gf_malloc(sizeof(char) * rtp->depacketizer->sl_map.configSize);
+			ifce->decoder_config = (char*)gf_malloc(sizeof(char) * rtp->depacketizer->sl_map.configSize);
 			ifce->decoder_config_size = rtp->depacketizer->sl_map.configSize;
 			memcpy(ifce->decoder_config, rtp->depacketizer->sl_map.config, rtp->depacketizer->sl_map.configSize);
 			break;
 		}
 	}
 	if (rtp->depacketizer->sl_map.StreamStateIndication) {
-		rtp->use_carousel = 1;
+		rtp->use_carousel = GF_TRUE;
 		rtp->au_sn=0;
 	}
 
 	/*DTS signaling is only supported for MPEG-4 visual*/
 	if (rtp->depacketizer->sl_map.DTSDeltaLength) ifce->caps |= GF_ESI_SIGNAL_DTS;
 
-	gf_rtp_depacketizer_reset(rtp->depacketizer, 1);
-	e = gf_rtp_initialize(rtp->rtp_ch, 0x100000ul, 0, 0, 10, 200, NULL);
+	gf_rtp_depacketizer_reset(rtp->depacketizer, GF_TRUE);
+	e = gf_rtp_initialize(rtp->rtp_ch, 0x100000ul, GF_FALSE, 0, 10, 200, NULL);
 	if (e!=GF_OK) {
 		gf_rtp_del(rtp->rtp_ch);
 		fprintf(stderr, "Cannot initialize RTP channel: %s\n", gf_error_to_string(e));
@@ -1368,7 +1377,7 @@ void fill_seng_es_ifce(GF_ESInterface *ifce, u32 i, GF_SceneEngine *seng, u32 pe
 }
 #endif
 
-static Bool open_source(M2TSSource *source, char *src, u32 carousel_rate, u32 mpeg4_signaling, char *update, char *audio_input_ip, u16 audio_input_port, char *video_buffer, Bool force_real_time, u32 bifs_use_pes, const char *temi_url, Bool compute_max_size)
+static Bool open_source(M2TSSource *source, char *src, u32 carousel_rate, u32 mpeg4_signaling, char *update, char *audio_input_ip, u16 audio_input_port, char *video_buffer, Bool force_real_time, u32 bifs_use_pes, const char *temi_url, Bool compute_max_size, Bool insert_ntp)
 {
 #ifndef GPAC_DISABLE_STREAMING
 	GF_SDPInfo *sdp;
@@ -1425,7 +1434,9 @@ static Bool open_source(M2TSSource *source, char *src, u32 carousel_rate, u32 mp
 						if (!source->pcr_idx) {
 							source->pcr_idx = i+1;
 							if (temi_url) {
-								((GF_ESIMP4 *)source->streams[i].input_udta)->insert_temi = 1;
+								((GF_ESIMP4 *)source->streams[i].input_udta)->insert_temi = GF_TRUE;
+								if (insert_ntp) 
+									((GF_ESIMP4 *)source->streams[i].input_udta)->insert_ntp = GF_TRUE;
 								if (strcmp(temi_url, "NOTEMIURL"))
 									((GF_ESIMP4 *)source->streams[i].input_udta)->temi_url = temi_url;
 							}
@@ -1789,7 +1800,7 @@ static GFINLINE GF_Err parse_args(int argc, char **argv, u32 *mux_rate, u32 *car
                                   char** segment_dir, u32 *segment_duration, char **segment_manifest, u32 *segment_number, char **segment_http_prefix, u32 *split_rap, u32 *nb_pck_pack, u32 *pcr_ms, u32 *ttl, const char **ip_ifce, const char **temi_url, u32 *sdt_refresh_rate)
 {
 	Bool rate_found=0, mpeg4_carousel_found=0, time_found=0, src_found=0, dst_found=0, audio_input_found=0, video_input_found=0,
-	     seg_dur_found=0, seg_dir_found=0, seg_manifest_found=0, seg_number_found=0, seg_http_found=0, real_time_found=0;
+	     seg_dur_found=0, seg_dir_found=0, seg_manifest_found=0, seg_number_found=0, seg_http_found=0, real_time_found=0, insert_ntp=0;
 	char *arg = NULL, *next_arg = NULL, *error_msg = "no argument found";
 	u32 mpeg4_signaling = GF_M2TS_MPEG4_SIGNALING_NONE;
 	Bool force_real_time = 0;
@@ -1963,19 +1974,19 @@ static GFINLINE GF_Err parse_args(int argc, char **argv, u32 *mux_rate, u32 *car
 			}
 			seg_dur_found = 1;
 			*segment_duration = atoi(next_arg);
-		} else if (CHECK_PARAM("-segment-manifest=")) {
+		} else if (CHECK_PARAM("-segment-manifest")) {
 			if (seg_manifest_found) {
 				goto error;
 			}
 			seg_manifest_found = 1;
 			*segment_manifest = next_arg;
-		} else if (CHECK_PARAM("-segment-http-prefix=")) {
+		} else if (CHECK_PARAM("-segment-http-prefix")) {
 			if (seg_http_found) {
 				goto error;
 			}
 			seg_http_found = 1;
 			*segment_http_prefix = next_arg;
-		} else if (CHECK_PARAM("-segment-number=")) {
+		} else if (CHECK_PARAM("-segment-number")) {
 			if (seg_number_found) {
 				goto error;
 			}
@@ -2011,6 +2022,8 @@ static GFINLINE GF_Err parse_args(int argc, char **argv, u32 *mux_rate, u32 *car
 			temi_offset = atoi(next_arg);
 		} else if (!stricmp(arg, "-temi-noloop")) {
 			temi_disable_loop = 1;
+		} else if (!stricmp(arg, "-insert-ntp")) {
+			insert_ntp = GF_TRUE;
 		}
 		else if (CHECK_PARAM("-dst-udp")) {
 			char *sep = strchr(next_arg, ':');
@@ -2066,7 +2079,7 @@ static GFINLINE GF_Err parse_args(int argc, char **argv, u32 *mux_rate, u32 *car
 			src_args = src_args + 1;
 		}
 
-		res = open_source(&sources[*nb_sources], next_arg, *carrousel_rate, mpeg4_signaling, *bifs_src_name, *audio_input_ip, *audio_input_port, *video_buffer, force_real_time, *bifs_use_pes, *temi_url, (*pcr_offset == (u32) -1) ? 1 : 0);
+		res = open_source(&sources[*nb_sources], next_arg, *carrousel_rate, mpeg4_signaling, *bifs_src_name, *audio_input_ip, *audio_input_port, *video_buffer, force_real_time, *bifs_use_pes, *temi_url, (*pcr_offset == (u32) -1) ? 1 : 0, insert_ntp);
 
 
 		//we may have arguments
@@ -2281,16 +2294,17 @@ int main(int argc, char **argv)
 	/*   create mp42ts muxer   */
 	/***************************/
 	muxer = gf_m2ts_mux_new(mux_rate, psi_refresh_rate, real_time);
-	if (muxer) gf_m2ts_mux_use_single_au_pes_mode(muxer, single_au_pes);
+	if (!muxer) {
+		fprintf(stderr, "Could not create the muxer. Aborting.\n");
+		goto exit;
+	}
+	gf_m2ts_mux_use_single_au_pes_mode(muxer, single_au_pes);
 	if (pcr_init_val>=0) gf_m2ts_mux_set_initial_pcr(muxer, (u64) pcr_init_val);
 	gf_m2ts_mux_set_pcr_max_interval(muxer, pcr_ms);
 
 	if (ts_out != NULL) {
 		if (segment_duration) {
-			char *dot;
 			strcpy(segment_prefix, ts_out);
-			dot = strrchr(segment_prefix, '.');
-			dot[0] = 0;
 			if (segment_dir) {
 				if (strchr("\\/", segment_name[strlen(segment_name)-1])) {
 					sprintf(segment_name, "%s%s_%d.ts", segment_dir, segment_prefix, segment_index);

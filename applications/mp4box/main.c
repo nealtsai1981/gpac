@@ -291,9 +291,9 @@ void PrintDASHUsage()
 	fprintf(stderr, "DASH Options:\n"
 	        " -dash dur            enables DASH-ing of the file(s) with a segment duration of DUR ms\n"
 	        "                       Note: the duration of a fragment (subsegment) is set\n"
-	        "						using the -frag switch.\n"
+	        "	                            using the -frag switch.\n"
 	        "                       Note: for onDemand profile, sets duration of a subsegment\n"
-	        " -dash-live[=F] dur   generates a live DASH session using dur segment duration, optionnally writing live context to F\n"
+	        " -dash-live[=F] dur   generates a live DASH session using dur segment duration, optionally writing live context to F\n"
 	        "                       MP4Box will run the live session until \'q\' is pressed or a fatal error occurs.\n"
 	        " -ddbg-live[=F] dur   same as -dash-live without time regulation for debug purposes.\n"
 	        " -frag time_in_ms     Specifies a fragment duration of time_in_ms.\n"
@@ -303,7 +303,7 @@ void PrintDASHUsage()
 	        "                       * Note: Default temp dir is OS-dependent\n"
 	        " -profile NAME        specifies the target DASH profile: \"onDemand\",\n"
 	        "                       \"live\", \"main\", \"simple\", \"full\",\n"
-	        "                       \"dashavc264:live\", \"dashavc264:onDemand\"\n"
+	        "                       \"hbbtv1.5:live\", \"dashavc264:live\", \"dashavc264:onDemand\"\n"
 	        "                       * This will set default option values to ensure conformance to the desired profile\n"
 	        "                       * Default profile is \"full\" in static mode, \"live\" in dynamic mode\n"
 	        " -profile-ext STRING  specifies a list of profile extensions, as used by DASH-IF and DVB.\n"
@@ -316,6 +316,7 @@ void PrintDASHUsage()
 	        " \":id=NAME\"         sets the representation ID to NAME\n"
 	        " \":period=NAME\"     sets the representation's period to NAME. Multiple periods may be used\n"
 	        "                       period appear in the MPD in the same order as specified with this option\n"
+	        " \":BaseURL=NAME\"    sets the BaseURL. Set multiple times for multiple BaseURLs\n"
 	        " \":bandwidth=VALUE\" sets the representation's bandwidth to a given value\n"
 			" \":duration=VALUE\"  Increases the duration of this period by the given duration in seconds\n"
 			"                       only used when no input media is specified (remote period insertion), eg :period=X:xlink=Z:duration=Y.\n"
@@ -351,9 +352,9 @@ void PrintDASHUsage()
 	        " -cprt string         adds copyright string to MPD\n"
 	        " -dash-ctx FILE       stores/restore DASH timing from FILE.\n"
 	        " -dynamic             uses dynamic MPD type instead of static.\n"
-			" -last-dynamic        same as dynamic but closes the period (insert lmsg brand if needed and update duration).\n"
-			" -mpd-duration DUR    sets the duration in second of a live session (0 by default). If 0, you must use -mpd-refresh.\n"
-			" -mpd-refresh TIME    specifies MPD update time in seconds (double can be used).\n"
+	        " -last-dynamic        same as dynamic but closes the period (insert lmsg brand if needed and update duration).\n"
+	        " -mpd-duration DUR    sets the duration in second of a live session (0 by default). If 0, you must use -mpd-refresh.\n"
+	        " -mpd-refresh TIME    specifies MPD update time in seconds (double can be used).\n"
 	        " -time-shift  TIME    specifies MPD time shift buffer depth in seconds (default 0). Specify -1 to keep all files\n"
 	        " -subdur DUR          specifies maximum duration in ms of the input file to be dashed in LIVE or context mode.\n"
 	        "                       NOTE: This does not change the segment duration: dashing stops once segments produced exceeded the duration.\n"
@@ -380,7 +381,7 @@ void PrintDASHUsage()
 	        " -no-frags-default    disables default flags in fragments\n"
 	        " -single-traf         uses a single track fragment per moof (smooth streaming and derived specs may require this)\n"
 	        " -dash-ts-prog N      program_number to be considered in case of an MPTS input file.\n"
-			" -frag-rt             when using fragments in live mode, flush fragments according to their timing (only supported with a single input).\n"
+	        " -frag-rt             when using fragments in live mode, flush fragments according to their timing (only supported with a single input).\n"
 	        "\n");
 }
 
@@ -1439,6 +1440,12 @@ enum
 		u32 i, j; \
 		for (i=0;i<nb_dash_inputs;i++) {\
 			GF_DashSegmenterInput *di = &dash_inputs[i];\
+			if (di->nb_baseURL) { \
+				for (j=0; j<di->nb_baseURL; j++) { \
+					gf_free(di->baseURL[j]); \
+				} \
+				gf_free(di->baseURL); \
+			} \
 			if (di->rep_descs) { \
 				for (j=0; j<di->nb_rep_descs; j++) { \
 					gf_free(di->rep_descs[j]); \
@@ -1508,6 +1515,7 @@ GF_DashSegmenterInput *set_dash_input(GF_DashSegmenterInput *dash_inputs, char *
 				/* this is a real separator if it is followed by a keyword we are looking for */
 				if (!strnicmp(sep, ":id=", 4) ||
 				        !strnicmp(sep, ":period=", 8) ||
+				        !strnicmp(sep, ":BaseURL=", 9) ||
 				        !strnicmp(sep, ":bandwidth=", 11) ||
 				        !strnicmp(sep, ":role=", 6) ||
 				        !strnicmp(sep, ":desc", 5) ||
@@ -1533,7 +1541,11 @@ GF_DashSegmenterInput *set_dash_input(GF_DashSegmenterInput *dash_inputs, char *
 					}
 				}
 			} else if (!strnicmp(opts, "period=", 7)) di->periodID = gf_strdup(opts+7);
-			else if (!strnicmp(opts, "bandwidth=", 10)) di->bandwidth = atoi(opts+10);
+			else if (!strnicmp(opts, "BaseURL=", 8)) {
+				di->baseURL = (char **)gf_realloc(di->baseURL, (di->nb_baseURL+1)*sizeof(char *));
+				di->baseURL[di->nb_baseURL] = gf_strdup(opts+8);
+				di->nb_baseURL++;
+			} else if (!strnicmp(opts, "bandwidth=", 10)) di->bandwidth = atoi(opts+10);
 			else if (!strnicmp(opts, "role=", 5)) di->role = gf_strdup(opts+5);
 			else if (!strnicmp(opts, "desc", 4)) {
 				u32 *nb_descs=NULL;
@@ -2394,7 +2406,9 @@ int mp4boxMain(int argc, char **argv)
 			CHECK_NEXT_ARG
 			if (!stricmp(argv[i+1], "live") || !stricmp(argv[i+1], "simple")) dash_profile = GF_DASH_PROFILE_LIVE;
 			else if (!stricmp(argv[i+1], "onDemand")) dash_profile = GF_DASH_PROFILE_ONDEMAND;
-			else if (!stricmp(argv[i+1], "dashavc264:live")) {
+			else if (!stricmp(argv[i+1], "hbbtv1.5:live")) {
+				dash_profile = GF_DASH_PROFILE_HBBTV_1_5_ISOBMF_LIVE;
+			} else if (!stricmp(argv[i+1], "dashavc264:live")) {
 				dash_profile = GF_DASH_PROFILE_AVC264_LIVE;
 			} else if (!stricmp(argv[i+1], "dashavc264:onDemand")) {
 				dash_profile = GF_DASH_PROFILE_AVC264_ONDEMAND;
@@ -3542,6 +3556,9 @@ int mp4boxMain(int argc, char **argv)
 		char szMPD[GF_MAX_PATH], *sep;
 		GF_Config *dash_ctx = NULL;
 		u32 do_abort = 0;
+		GF_DASHSegmenter *dasher;
+
+
 		gf_log_set_tool_level(GF_LOG_DASH, GF_LOG_INFO);
 		strcpy(outfile, outName ? outName : gf_url_get_resource_name(inName) );
 		sep = strrchr(outfile, '.');
@@ -3584,19 +3601,54 @@ int mp4boxMain(int argc, char **argv)
 			file = NULL;
 			del_file = GF_TRUE;
 		}
+
+		/*setup dash*/
+		dasher = gf_dasher_new(szMPD, dash_profile, tmpdir, dash_scale, dash_ctx);
+		if (!dasher) {
+			MP4BOX_EXIT_WITH_CODE( 1 );
+			return GF_OUT_OF_MEM;
+		}
+		e = gf_dasher_set_info(dasher, dash_title, cprt, dash_more_info, dash_source);
+		if (e) { fprintf(stderr, "DASH Error: %s\n", gf_error_to_string(e)); MP4BOX_EXIT_WITH_CODE( 1 ); }
+
+		//e = gf_dasher_set_location(dasher, mpd_source);		
+		for (i=0; i < nb_mpd_base_urls; i++) {
+			e = gf_dasher_add_base_url(dasher, mpd_base_urls[i]);
+			if (e) { fprintf(stderr, "DASH Error: %s\n", gf_error_to_string(e)); MP4BOX_EXIT_WITH_CODE( 1 ); }
+		}
+		e = gf_dasher_enable_url_template(dasher, (Bool) use_url_template, seg_name, seg_ext);
+		if (!e) e = gf_dasher_enable_segment_timeline(dasher, segment_timeline);
+		if (!e) e = gf_dasher_enable_single_segment(dasher, single_segment);
+		if (!e) e = gf_dasher_enable_single_file(dasher, single_file);
+		if (!e) e = gf_dasher_set_switch_mode(dasher, bitstream_switching_mode);
+		if (!e) e = gf_dasher_set_durations(dasher, dash_duration, interleaving_time);
+		if (!e) e = gf_dasher_enable_rap_splitting(dasher, seg_at_rap, frag_at_rap);
+		if (!e) e = gf_dasher_set_segment_marker(dasher, segment_marker);
+		if (!e) e = gf_dasher_enable_sidx(dasher, (subsegs_per_sidx>=0) ? 1 : 0, (u32) subsegs_per_sidx, daisy_chain_sidx);
+		if (!e) e = gf_dasher_set_dynamic_mode(dasher, dash_mode, mpd_update_time, time_shift_depth, mpd_live_duration);
+		if (!e) e = gf_dasher_set_min_buffer(dasher, min_buffer);
+		if (!e) e = gf_dasher_set_ast_offset(dasher, ast_offset_ms);
+		if (!e) e = gf_dasher_enable_memory_fragmenting(dasher, memory_frags);
+		if (!e) e = gf_dasher_set_initial_isobmf(dasher, initial_moof_sn, initial_tfdt);
+		if (!e) e = gf_dasher_configure_isobmf_default(dasher, no_fragments_defaults, pssh_in_moof, samplegroups_in_traf, single_traf_per_moof);
+		if (!e) e = gf_dasher_enable_utc_ref(dasher, insert_utc);
+		if (!e) e = gf_dasher_enable_real_time(dasher, frag_real_time);
+		if (!e) e = gf_dasher_set_profile_extension(dasher, dash_profile_extension);
+
+		for (i=0; i < nb_dash_inputs; i++) {
+			if (!e) e = gf_dasher_add_input(dasher, &dash_inputs[i]);
+		}
+		if (e) { 
+			fprintf(stderr, "DASH Setup Error: %s\n", gf_error_to_string(e));
+			MP4BOX_EXIT_WITH_CODE( 1 ); 
+		}
+
 		while (1) {
 			if (do_abort>=2) {
-				dash_mode = GF_DASH_DYNAMIC_LAST;
+				e = gf_dasher_set_dynamic_mode(dasher, GF_DASH_DYNAMIC_LAST, 0, time_shift_depth, mpd_live_duration);
 			}
 
-			e = gf_dasher_segment_files(szMPD, dash_inputs, nb_dash_inputs, dash_profile, dash_title, dash_source, cprt, dash_more_info,
-			                            (const char **) mpd_base_urls, nb_mpd_base_urls,
-			                            use_url_template, segment_timeline, single_segment, single_file, bitstream_switching_mode,
-			                            seg_at_rap, dash_duration, seg_name, seg_ext, segment_marker,
-			                            interleaving_time, subsegs_per_sidx, daisy_chain_sidx, frag_at_rap, tmpdir,
-			                            dash_ctx, dash_mode, mpd_update_time, time_shift_depth, dash_subduration, min_buffer,
-			                            ast_offset_ms, dash_scale, memory_frags, initial_moof_sn, initial_tfdt, no_fragments_defaults, 
-										pssh_in_moof, samplegroups_in_traf, single_traf_per_moof, mpd_live_duration, insert_utc, frag_real_time, dash_profile_extension);
+			if (!e) e = gf_dasher_process(dasher, dash_subduration);
 
 			if (do_abort) 
 				break;
@@ -3611,7 +3663,7 @@ int mp4boxMain(int argc, char **argv)
 
 			if (dash_live) {
 				u32 slept = gf_sys_clock();
-				u32 sleep_for = gf_dasher_next_update_time(dash_ctx, mpd_update_time);
+				u32 sleep_for = gf_dasher_next_update_time(dasher);
 				fprintf(stderr, "Next generation scheduled in %d ms\n", sleep_for);
 				while (1) {
 					if (gf_prompt_has_input()) {
@@ -3636,7 +3688,7 @@ int mp4boxMain(int argc, char **argv)
 					if (!sleep_for) break;
 
 					gf_sleep(10);
-					sleep_for = gf_dasher_next_update_time(dash_ctx, mpd_update_time);
+					sleep_for = gf_dasher_next_update_time(dasher);
 					if (sleep_for<10) {
 						fprintf(stderr, "Slept for %d ms before generation\n", gf_sys_clock() - slept);
 						break;
@@ -3646,6 +3698,8 @@ int mp4boxMain(int argc, char **argv)
 				break;
 			}
 		}
+
+		gf_dasher_del(dasher);
 
 		if (dash_ctx) {
 			if (do_abort==3) {
