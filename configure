@@ -240,6 +240,7 @@ GPAC configuration options:
   --disable-jack           disable Jack audio
   --enable-pulseaudio      enable  Pulse audio
   --disable-pulseaudio     disable Pulse audio
+  --disable-x11            disable X11
   --disable-x11-shm        disable X11 shared memory support
   --disable-x11-xv         disable X11 Xvideo support
   --enable-fixed-point     enable fixed-point math
@@ -579,6 +580,7 @@ EOF
         js_flags="-DXP_PC -D_declspec=__declspec"
         mingw32="yes"
         win32="yes"
+        want_pic="no"
         extralibs="$extralibs -lws2_32 -lwinmm"
         CFLAGS="$CFLAGS -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64"
         if test "$cross_prefix" != "" ; then
@@ -1855,6 +1857,8 @@ for opt do
             ;;
         --disable-oss-audio) has_oss_audio="no"
             ;;
+        --disable-x11) has_x11="no"
+            ;;
         --disable-x11-shm) has_x11_shm="no"
             ;;
         --disable-x11-xv) has_x11_xv="no"
@@ -2425,7 +2429,6 @@ if test "$static_mp4box" = "yes"; then
     has_openhevc="no"
     has_freenect="no"
     has_platinum="no"
-    disable_player="yes"
     static_build="yes"
 fi
 
@@ -2438,45 +2441,45 @@ if test "$cpu" = "sh4"; then
 fi
 
 if test "$disable_player" = "yes" ; then
-disable_scenegraph="yes"
+    disable_scenegraph="yes"
 fi
 
 if test "$disable_scenegraph" = "yes" ; then
-disable_3d="yes"
-disable_svg="yes"
-disable_vrml="yes"
-disable_x3d="yes"
-disable_bifs="yes"
-disable_bifs_enc="yes"
-disable_laser="yes"
-disable_seng="yes"
-disable_qtvr="yes"
-disable_swf="yes"
-disable_scene_stats="yes"
-disable_scene_dump="yes"
-disable_scene_encode="yes"
-disable_loader_isoff="yes"
-disable_loader_bt="yes"
-disable_loader_xmt="yes"
-disable_streaming="yes"
-disable_player="yes"
-disable_smgr="yes"
-has_js="no"
+    disable_3d="yes"
+    disable_svg="yes"
+    disable_vrml="yes"
+    disable_x3d="yes"
+    disable_bifs="yes"
+    disable_bifs_enc="yes"
+    disable_laser="yes"
+    disable_seng="yes"
+    disable_qtvr="yes"
+    disable_swf="yes"
+    disable_scene_stats="yes"
+    disable_scene_dump="yes"
+    disable_scene_encode="yes"
+    disable_loader_isoff="yes"
+    disable_loader_bt="yes"
+    disable_loader_xmt="yes"
+    disable_streaming="yes"
+    disable_player="yes"
+    disable_smgr="yes"
+    has_js="no"
 fi
 
 if test "$disable_mpd" = "yes"; then
-disable_dash="yes"
+    disable_dash="yes"
 fi
 
 if test "$disable_od_parse" = "yes" ; then
-disable_loader_isoff="yes"
-disable_loader_bt="yes"
-disable_loader_xmt="yes"
+    disable_loader_isoff="yes"
+    disable_loader_bt="yes"
+    disable_loader_xmt="yes"
 fi
 
 if test "$disable_parsers" = "yes" ; then
-has_jpeg="no"
-has_png="no"
+    has_jpeg="no"
+    has_png="no"
 fi
 
 #prepare for config.h writing
@@ -2746,10 +2749,12 @@ if test "$win32" != "yes" ; then
     echo "Jack Audio: $has_jack"
     echo "PulseAudio Audio: $has_pulseaudio"
     echo "DirectFB support: $has_directfb"
-    echo "X11 Shared Memory support: $has_x11_shm (path: $X11_PATH)"
-    echo "X11 XVideo support: $has_x11_xv"
-fi
 
+    if test "$has_x11" != "no" ; then
+        echo "X11 Shared Memory support: $has_x11_shm (path: $X11_PATH)"
+        echo "X11 XVideo support: $has_x11_xv"
+    fi
+fi
 echo "SDL Support: $has_sdl"
 if test "$sdl_too_old" = "yes" ; then
     echo "SDL Version too old - please upgrade for SDL support"
