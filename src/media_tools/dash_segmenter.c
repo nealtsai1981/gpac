@@ -704,7 +704,9 @@ static GF_Err gf_media_isom_segment_file(GF_ISOFile *input, const char *output_f
 	GF_ISOFile *output, *bs_switch_segment;
 	GF_ISOSample *sample, *next;
 	GF_List *fragmenters;
-	u64 MaxFragmentDuration, MaxSegmentDuration, SegmentDuration, maxFragDurationOverSegment, segment_start_time, period_duration;
+	u64 MaxFragmentDuration, MaxSegmentDuration, segment_start_time, period_duration;
+	Double SegmentDuration;
+	Double maxFragDurationOverSegment;
 	u64 presentationTimeOffset = 0;
 	Double file_duration, max_segment_duration;
 	u32 nb_segments, width, height, sample_rate, nb_channels, sar_w, sar_h, fps_num, fps_denum, startNumber;
@@ -744,7 +746,8 @@ static GF_Err gf_media_isom_segment_file(GF_ISOFile *input, const char *output_f
 	u32 *segments_info = NULL;
 	u32 nb_segments_info = 0;
 	u32 protected_track = 0;
-	u64 min_seg_dur, max_seg_dur, total_seg_dur, last_seg_dur;
+	u64 min_seg_dur, max_seg_dur;
+	Double total_seg_dur, last_seg_dur;
 	Bool audio_only = GF_TRUE;
 	Bool is_bs_switching = GF_FALSE;
 	Bool use_url_template = dash_cfg->use_url_template;
@@ -1667,8 +1670,9 @@ restart_fragmentation_pass:
 
 					//only compute max dur over segment for the track used for indexing / deriving MPD start time
 					if (!tfref || (tf->is_ref_track)) {
-						u64 f_dur;
-						f_dur = ( tf->FragmentLength ) * dash_cfg->dash_scale / tf->TimeScale;
+						// Neal 20151125: Use double to fix truncation issue when accumulate segment duration to total duration
+						Double f_dur;
+						f_dur = (Double)( tf->FragmentLength ) * dash_cfg->dash_scale / tf->TimeScale;
 						if (maxFragDurationOverSegment <= f_dur) {
 							maxFragDurationOverSegment = f_dur;
 						}
