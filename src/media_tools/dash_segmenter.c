@@ -1601,8 +1601,13 @@ restart_fragmentation_pass:
 							/*if no more SAP after this one, do not switch segment*/
 							if (next_sap_time) {
 								u32 scaler;
-								/*this is the fragment duration from last sample added to next SAP*/
-								frag_dur += (s64) (next_sap_time - tf->next_sample_dts - next_dur) * dash_cfg->dash_scale / tf->TimeScale;
+								// Neal 20151103: Do not accumulate duration if the next_sap_time is not bigger than next_sample_dts
+								// It's for handle the unsegment issue if the last GOP had I frame only
+								if (next_sap_time > tf->next_sample_dts)
+								{
+								    /*this is the fragment duration from last sample added to next SAP*/
+								    frag_dur += (s64) (next_sap_time - tf->next_sample_dts - next_dur) * dash_cfg->dash_scale / tf->TimeScale;
+								}
 								/*if media segment about to be produced is longer than max segment length, force segment split*/
 								if (!tf->splitable && (SegmentDuration + frag_dur > MaxSegmentDuration)) {
 									split_at_rap = GF_TRUE;
@@ -5544,7 +5549,8 @@ GF_Err gf_dasher_process(GF_DASHSegmenter *dasher, Double sub_duration)
 				dur = dasher->subduration;
 			} 
 
-			if (dur > period_duration)
+			// Neal 20151110: choose the smallest duration among all streams to avoid the case that had video but no sound and calculated segment number is
+			if (dur < period_duration || period_duration == 0)
 				period_duration = dur;
 
 			switch (dash_input->protection_scheme_type) {
